@@ -1,0 +1,2510 @@
+openapi: 3.0.0
+info:
+  title: Cloud Save API
+  version: '1.0'
+  description: |
+    # Introduction
+    This is the API specification for the Unity Cloud Save service that allows player or custom non-player state to be accessed and persisted from a game client.
+    The Player State API allows data to be stored against a specific player ID. Access using client authentication is limited to the specified player for both data reads and writes.
+    The Game State API allows data to be stored against a custom ID provided by the user. All players are able to read the data from the custom ID using client authentication, but write operations are limited to Service Account authentication.
+    To use this API, you must first enable it through the Unity Gaming Services dashboard.
+
+    # General Information
+    **Cloud Save Data** is for storing small blobs of JSON serializable data, stored as key/value pairs.
+    It can store data against a player ID (referred to as Player State) or a custom ID (referred to as Game State). The custom ID is a string that can be used to store data against a non-player entity, but the client API is restricted to read-only access.
+    In addition to the default access levels for player and game state, data can be stored in public player state, protected player state, or private game state. The access details are as follows:
+    - Default Player State: Player-writable and player-readable, by the player the data corresponds to
+    - Public Player State: Player-writable by the player the data corresponds to, and readable by any player (e.g. public player profile data)
+    - Protected Player State: Server-writable only, and player-readable by the player the data corresponds to
+    - Default Game State: Server-writable only, player-readable by any player
+    - Private Game State: Server-writable and server-readable only
+
+    The maximum size for player or custom data is 5 MB across all key/value pairs for that player and access class. A player can have data in a single slot that is up to 5 MB in size, or use many slots that equal to less than 5 MB in total size.
+    Limits:
+    - Maximum 255 characters per slot name
+    - Maximum 2000 data slots per player or custom ID per access class
+    - Maximum 5 MB in size per player or custom ID per access class across all slots
+
+    **Cloud Save Files** is for storing data files (binary, JSON, text, CSV, etc.) against keys. The maximum size for player data is 1 GB across all keys for that player. A player can have data in a single file that is up to 1 GB in size, or use many files that equal to less than 1 GB in total size.
+    Limits:
+    - Maximum 255 characters per file name
+    - Maximum 200 files per player
+    - Maximum 1 GB in size per player across all files
+
+    ## Rate Limits
+    The API has rate limiting in place. The endpoints are limited to 600 requests per minute on a per-player basis.
+    The API responds with a `429` HTTP status code if the rate limit is exceeded.
+    It will also respond with a `Retry-After` header to be used in conjunction with a client's retry logic. The value is the number of seconds until a request for the given player will be accepted.
+tags:
+  - name: Data
+    description: Associated with the Cloud Save Data service.
+  - name: Files
+    description: Associated with the Cloud Save Files service.
+
+servers:
+  - url: 'https://cloud-save.services.api.unity.com'
+
+security:
+  - Client: [ ]
+  - ServiceAccount: [ ]
+
+paths:
+  '/v1/data/projects/{projectId}/players/{playerId}/items':
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/PlayerId'
+    post:
+      summary: Set Player Item
+      operationId: setItem
+      tags:
+        - Data
+      description: |
+        Set a data item with a given key and value for the specified player.
+        The value is limited to a maximum size of 5 MB across all default access level slots.
+        The entire default access level saved state for a player is limited to 2000 keys.
+        Attempting to set a new key beyond this limit will result in an error.
+      requestBody:
+        description: Add a data item to store for a player.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetItemBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetItemResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    get:
+      summary: Get Player Items
+      operationId: getItems
+      tags:
+        - Data
+      description: |
+        Retrieves saved data values for all keys specified, ordered alphabetically in pages of 20.
+        If no keys are supplied then returns all keys, ordered alphabetically in pages of 20.
+      parameters:
+        - schema:
+            $ref: '#/components/schemas/KeyList'
+          in: query
+          name: keys
+          description: The keys to retrieve, in exploded form style, e.g. `keys=KEY1&keys=KEY2&keys=KEY3`.
+          style: form
+          explode: true
+        - schema:
+            type: string
+          in: query
+          name: after
+          description: The key after which to retrieve the next page of keys.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetItemsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    delete:
+      summary: Delete Player Items
+      operationId: deleteItems
+      tags:
+        - Data
+      description: |
+        Deletes all default access level data associated with a given player.
+      responses:
+        '200':
+          description: OK
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  '/v1/data/projects/{projectId}/players/{playerId}/items/{key}':
+    parameters:
+      - $ref: '#/components/parameters/Key'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/PlayerId'
+    delete:
+      summary: Delete Player Item
+      operationId: deleteItem
+      tags:
+        - Data
+      description: Deletes a data item by the specified key for the given player.
+      parameters:
+        - schema:
+            $ref: '#/components/schemas/WriteLock'
+          in: query
+          name: writeLock
+          description: |-
+            Enforces conflict checking when deleting an existing data item.
+            Omitting this field ignores write conflicts. When present, an error response will be returned if the writeLock in the request does not match the stored writeLock.
+      responses:
+        '200':
+          description: OK
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/DeleteConflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  '/v1/data/projects/{projectId}/players/{playerId}/keys':
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/PlayerId'
+    get:
+      summary: Get Player Keys
+      operationId: getKeys
+      tags:
+        - Data
+      description: Gets a paged list of keys for the given player, ordered alphabetically in pages of 100.
+      parameters:
+        - schema:
+            $ref: '#/components/schemas/Key'
+          in: query
+          name: after
+          description: Returns the page of results after the key specified.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetKeysResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  '/v1/data/projects/{projectId}/players/{playerId}/item-batch':
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/PlayerId'
+    post:
+      summary: Set Player Item Batch
+      operationId: setItemBatch
+      tags:
+        - Data
+      description: |-
+        Set up to 20 data items with key, value and optional writeLock for the given player. The values are limited to a maximum size of 5 MB across all default access level slots for the player.
+        The entire default access level saved state for a player is limited to 2000 keys. Attempting to set a new key beyond this limit will result in an error.
+        The batch set operation is considered atomic and if any of the set key operation fails, the entire operation is failed. Error responses should identify the affected key operations that failed.
+      requestBody:
+        description: Set batch data items for a player.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetItemBatchBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetItemBatchResponse'
+        '400':
+          description: |-
+            Bad Request. Returned code indicates one of:
+            - Request parameter validation failure
+            - Other
+            See the errors field for more details.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/BasicErrorResponse'
+                  - $ref: '#/components/schemas/BatchValidationErrorResponse'
+                  - $ref: '#/components/schemas/ValidationErrorResponse'
+                  - $ref: '#/components/schemas/BatchBasicErrorResponse'
+                discriminator:
+                  propertyName: type
+                  mapping:
+                    problems/basic: '#/components/schemas/BasicErrorResponse'
+                    problems/validation: '#/components/schemas/ValidationErrorResponse'
+                    problems/batch-basic: '#/components/schemas/BatchBasicErrorResponse'
+                    problems/batch-validation: '#/components/schemas/BatchValidationErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/BatchConflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  '/v1/data/projects/{projectId}/players/query':
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    post:
+      summary: Query Default Player Data
+      operationId: queryDefaultPlayerData
+      security:
+        - ServiceAccount: ['cloud_save.indexes.get']
+      tags:
+        - Data
+      description: |
+        Query player data with the default access class. If no index is available to fulfil the query then the query will fail.
+      requestBody:
+        description: Query object with an array of conditions to query the data with.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueryIndexBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryIndexResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  '/v1/data/projects/{projectId}/players/{playerId}/public/items':
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/PlayerId'
+    post:
+      summary: Set Public Player Item
+      operationId: setPublicItem
+      tags:
+        - Data
+      description: |
+        Set a public data item with a given key and value for the specified player.
+        The value is limited to a maximum size of 5 MB across all public access level slots.
+        The entire public saved state for a player is limited to 2000 keys.
+        Attempting to set a new key beyond this limit will result in an error.
+        The value set will be publicly readable by any player.
+      requestBody:
+        description: Add a data item to store for a player.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetItemBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetItemResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    get:
+      summary: Get Public Player Items
+      operationId: getPublicItems
+      tags:
+        - Data
+      description: |
+        Retrieves saved data values for all keys specified, ordered alphabetically in pages of 20.
+        If no keys are supplied then returns all keys, ordered alphabetically in pages of 20.
+        Accessible by any player for any other player's data.
+      parameters:
+        - schema:
+            $ref: '#/components/schemas/KeyList'
+          in: query
+          name: keys
+          description: The keys to retrieve, in exploded form style, e.g. `keys=KEY1&keys=KEY2&keys=KEY3`.
+          style: form
+          explode: true
+        - schema:
+            type: string
+          in: query
+          name: after
+          description: The key after which to retrieve the next page of keys.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetItemsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    delete:
+      summary: Delete Public Player Items
+      operationId: deletePublicItems
+      tags:
+        - Data
+      description: |
+        Deletes all public data associated with a given player.
+      responses:
+        '200':
+          description: OK
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  '/v1/data/projects/{projectId}/players/{playerId}/public/items/{key}':
+    parameters:
+      - $ref: '#/components/parameters/Key'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/PlayerId'
+    delete:
+      summary: Delete Public Player Item
+      operationId: deletePublicItem
+      tags:
+        - Data
+      description: Deletes a public data item by the specified key for the given player.
+      parameters:
+        - schema:
+            $ref: '#/components/schemas/WriteLock'
+          in: query
+          name: writeLock
+          description: |-
+            Enforces conflict checking when deleting an existing data item.
+            Omitting this field ignores write conflicts. When present, an error response will be returned if the writeLock in the request does not match the stored writeLock.
+      responses:
+        '200':
+          description: OK
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/DeleteConflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  '/v1/data/projects/{projectId}/players/{playerId}/public/keys':
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/PlayerId'
+    get:
+      summary: Get Public Player Keys
+      operationId: getPublicKeys
+      tags:
+        - Data
+      description: Gets a paged list of public keys for the given player, ordered alphabetically in pages of 100. Accessible by any player for any other player's data.
+      parameters:
+        - schema:
+            $ref: '#/components/schemas/Key'
+          in: query
+          name: after
+          description: Returns the page of results after the key specified.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetKeysResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  '/v1/data/projects/{projectId}/players/{playerId}/public/item-batch':
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/PlayerId'
+    post:
+      summary: Set Public Player Item Batch
+      operationId: setPublicItemBatch
+      tags:
+        - Data
+      description: |-
+        Set up to 20 public data items with key, value and optional writeLock for the given player. The values are limited to a maximum size of 5 MB across all slots for the player.
+        The entire public saved state for a player is limited to 2000 keys. Attempting to set a new key beyond this limit will result in an error.
+        The batch set operation is considered atomic and if any of the set key operation fails, the entire operation is failed. Error responses should identify the affected key operations that failed.
+      requestBody:
+        description: Set batch data items for a player.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetItemBatchBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetItemBatchResponse'
+        '400':
+          description: |-
+            Bad Request. Returned code indicates one of:
+            - Request parameter validation failure
+            - Other
+            See the errors field for more details.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/BasicErrorResponse'
+                  - $ref: '#/components/schemas/BatchValidationErrorResponse'
+                  - $ref: '#/components/schemas/ValidationErrorResponse'
+                  - $ref: '#/components/schemas/BatchBasicErrorResponse'
+                discriminator:
+                  propertyName: type
+                  mapping:
+                    problems/basic: '#/components/schemas/BasicErrorResponse'
+                    problems/validation: '#/components/schemas/ValidationErrorResponse'
+                    problems/batch-basic: '#/components/schemas/BatchBasicErrorResponse'
+                    problems/batch-validation: '#/components/schemas/BatchValidationErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/BatchConflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  '/v1/data/projects/{projectId}/players/public/query':
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    post:
+      summary: Query Public Player Data
+      operationId: queryPublicPlayerData
+      security:
+        - ServiceAccount: ['cloud_save.indexes.get']
+        - Client: [ ]
+      tags:
+        - Data
+      description: |
+        Query player data with the public access class. If no index is available to fulfil the query then the query will fail.
+      requestBody:
+        description: Query object with an array of conditions to query the data with.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueryIndexBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryIndexResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  '/v1/data/projects/{projectId}/players/{playerId}/protected/items':
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/PlayerId'
+    post:
+      summary: Set Protected Player Item
+      operationId: setProtectedItem
+      tags:
+        - Data
+      description: |
+        Set a protected data item with a given key and value for the specified player.
+        The value is limited to a maximum size of 5 MB across all protected access level slots.
+        The entire protected saved state for a player is limited to 2000 keys.
+        Attempting to set a new key beyond this limit will result in an error.
+        Only accessible via an authenticated server authority.
+      security:
+        - ServiceAccount: [ ]
+      requestBody:
+        description: Add a data item to store for a player.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetItemBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetItemResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    get:
+      summary: Get Protected Player Items
+      operationId: getProtectedItems
+      tags:
+        - Data
+      description: |
+        Retrieves protected save data values for all keys specified, ordered alphabetically in pages of 20.
+        If no keys are supplied then returns all keys, ordered alphabetically in pages of 20.
+      parameters:
+        - schema:
+            $ref: '#/components/schemas/KeyList'
+          in: query
+          name: keys
+          description: The keys to retrieve, in exploded form style, e.g. `keys=KEY1&keys=KEY2&keys=KEY3`.
+          style: form
+          explode: true
+        - schema:
+            type: string
+          in: query
+          name: after
+          description: The key after which to retrieve the next page of keys.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetItemsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    delete:
+      summary: Delete Protected Player Items
+      operationId: deleteProtectedItems
+      tags:
+        - Data
+      description: |
+        Deletes all protected data associated with a given player. Only accessible via an authenticated server authority.
+      security:
+        - ServiceAccount: [ ]
+      responses:
+        '200':
+          description: OK
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  '/v1/data/projects/{projectId}/players/{playerId}/protected/items/{key}':
+    parameters:
+      - $ref: '#/components/parameters/Key'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/PlayerId'
+    delete:
+      summary: Delete Protected Player Item
+      operationId: deleteProtectedItem
+      tags:
+        - Data
+      description: Deletes a protected data item by the specified key for the given player. Only accessible via an authenticated server authority.
+      security:
+        - ServiceAccount: [ ]
+      parameters:
+        - schema:
+            $ref: '#/components/schemas/WriteLock'
+          in: query
+          name: writeLock
+          description: |-
+            Enforces conflict checking when deleting an existing data item.
+            Omitting this field ignores write conflicts. When present, an error response will be returned if the writeLock in the request does not match the stored writeLock.
+      responses:
+        '200':
+          description: OK
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/DeleteConflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  '/v1/data/projects/{projectId}/players/{playerId}/protected/keys':
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/PlayerId'
+    get:
+      summary: Get Protected Player Keys
+      operationId: getProtectedKeys
+      tags:
+        - Data
+      description: Gets a paged list of protected keys for the given player, ordered alphabetically in pages of 100.
+      parameters:
+        - schema:
+            $ref: '#/components/schemas/Key'
+          in: query
+          name: after
+          description: Returns the page of results after the key specified.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetKeysResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  '/v1/data/projects/{projectId}/players/{playerId}/protected/item-batch':
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/PlayerId'
+    post:
+      summary: Set Protected Player Item Batch
+      operationId: setProtectedItemBatch
+      tags:
+        - Data
+      description: |-
+        Set up to 20 protected data items with key, value and optional writeLock for the given player. The values are limited to a maximum size of 5 MB across all slots for the player.
+        The entire protected saved state for a player is limited to 2000 keys. Attempting to set a new key beyond this limit will result in an error.
+        The batch set operation is considered atomic and if any of the set key operation fails, the entire operation is failed. Error responses should identify the affected key operations that failed.
+        Only accessible via an authenticated server authority.
+      security:
+        - ServiceAccount: [ ]
+      requestBody:
+        description: Set batch data items for a player.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetItemBatchBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetItemBatchResponse'
+        '400':
+          description: |-
+            Bad Request. Returned code indicates one of:
+            - Request parameter validation failure
+            - Other
+            See the errors field for more details.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/BasicErrorResponse'
+                  - $ref: '#/components/schemas/BatchValidationErrorResponse'
+                  - $ref: '#/components/schemas/ValidationErrorResponse'
+                  - $ref: '#/components/schemas/BatchBasicErrorResponse'
+                discriminator:
+                  propertyName: type
+                  mapping:
+                    problems/basic: '#/components/schemas/BasicErrorResponse'
+                    problems/validation: '#/components/schemas/ValidationErrorResponse'
+                    problems/batch-basic: '#/components/schemas/BatchBasicErrorResponse'
+                    problems/batch-validation: '#/components/schemas/BatchValidationErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/BatchConflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  '/v1/data/projects/{projectId}/players/protected/query':
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    post:
+      summary: Query Protected Player Data
+      operationId: queryProtectedPlayerData
+      security:
+        - ServiceAccount: ['cloud_save.indexes.get']
+      tags:
+        - Data
+      description: |
+        Query player data with the protected access class. If no index is available to fulfil the query then the query will fail.
+      requestBody:
+        description: Query object with an array of conditions to query the data with.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueryIndexBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryIndexResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  '/v1/data/projects/{projectId}/custom/{customId}/items':
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/CustomId'
+    post:
+      summary: Set Custom Item
+      operationId: setCustomItem
+      tags:
+        - Data
+      description: |
+        Set a data item with a given key and value for the specified custom ID.
+        The value is limited to a maximum size of 5 MB across all default access level slots.
+        The entire default access level saved state for a custom ID is limited to 2000 keys.
+        Attempting to set a new key beyond this limit will result in an error.
+        Only accessible via an authenticated server authority.
+      security:
+        - ServiceAccount: [ ]
+      requestBody:
+        description: Add a data item to store for a custom ID.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetItemBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetItemResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    get:
+      summary: Get Custom Items
+      operationId: getCustomItems
+      tags:
+        - Data
+      description: |
+        Retrieves saved data values for all keys specified, ordered alphabetically in pages of 20.
+        If no keys are supplied then returns all keys, ordered alphabetically in pages of 20.
+      parameters:
+        - schema:
+            $ref: '#/components/schemas/KeyList'
+          in: query
+          name: keys
+          description: The keys to retrieve, in exploded form style, e.g. `keys=KEY1&keys=KEY2&keys=KEY3`.
+          style: form
+          explode: true
+        - schema:
+            type: string
+          in: query
+          name: after
+          description: The key after which to retrieve the next page of keys.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetItemsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    delete:
+      summary: Delete Custom Items
+      operationId: deleteCustomItems
+      tags:
+        - Data
+      description: |
+        Deletes all default access level data associated with a given custom ID. Only accessible via an authenticated server authority.
+      security:
+        - ServiceAccount: [ ]
+      responses:
+        '200':
+          description: OK
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  '/v1/data/projects/{projectId}/custom/{customId}/items/{key}':
+    parameters:
+      - $ref: '#/components/parameters/Key'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/CustomId'
+    delete:
+      summary: Delete Custom Item
+      operationId: deleteCustomItem
+      tags:
+        - Data
+      description: Deletes a data item by the specified key for the specified custom ID. Only accessible via an authenticated server authority.
+      security:
+        - ServiceAccount: [ ]
+      parameters:
+        - schema:
+            $ref: '#/components/schemas/WriteLock'
+          in: query
+          name: writeLock
+          description: |-
+            Enforces conflict checking when deleting an existing data item.
+            Omitting this field ignores write conflicts. When present, an error response will be returned if the writeLock in the request does not match the stored writeLock.
+      responses:
+        '200':
+          description: OK
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/DeleteConflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  '/v1/data/projects/{projectId}/custom/{customId}/keys':
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/CustomId'
+    get:
+      summary: Get Custom Keys
+      operationId: getCustomKeys
+      tags:
+        - Data
+      description: Gets a paged list of keys for the given custom ID, ordered alphabetically in pages of 100.
+      parameters:
+        - schema:
+            $ref: '#/components/schemas/Key'
+          in: query
+          name: after
+          description: Returns the page of results after the key specified.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetKeysResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  '/v1/data/projects/{projectId}/custom/{customId}/item-batch':
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/CustomId'
+    post:
+      summary: Set Custom Item Batch
+      operationId: setCustomItemBatch
+      tags:
+        - Data
+      description: |-
+        Set up to 20 data items with key, value and optional writeLock against the custom ID. The values are limited to a maximum size of 5 MB across all default access level slots for the custom ID.
+        The entire default access level saved state for a custom ID is limited to 2000 keys. Attempting to set a new key beyond this limit will result in an error.
+        The batch set operation is considered atomic and if any of the set key operation fails, the entire operation is failed. Error responses should identify the affected key operations that failed.
+        Only accessible via an authenticated server authority.
+      security:
+        - ServiceAccount: [ ]
+      requestBody:
+        description: Set batch data items for a custom ID.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetItemBatchBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetItemBatchResponse'
+        '400':
+          description: |-
+            Bad Request. Returned code indicates one of:
+            - Request parameter validation failure
+            - Other
+            See the errors field for more details.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/BasicErrorResponse'
+                  - $ref: '#/components/schemas/BatchValidationErrorResponse'
+                  - $ref: '#/components/schemas/ValidationErrorResponse'
+                  - $ref: '#/components/schemas/BatchBasicErrorResponse'
+                discriminator:
+                  propertyName: type
+                  mapping:
+                    problems/basic: '#/components/schemas/BasicErrorResponse'
+                    problems/validation: '#/components/schemas/ValidationErrorResponse'
+                    problems/batch-basic: '#/components/schemas/BatchBasicErrorResponse'
+                    problems/batch-validation: '#/components/schemas/BatchValidationErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/BatchConflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  '/v1/data/projects/{projectId}/custom/query':
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    post:
+      summary: Query Default Custom Data
+      operationId: queryDefaultCustomData
+      security:
+        - ServiceAccount: ['cloud_save.indexes.get']
+        - Client: [ ]
+      tags:
+        - Data
+      description: |
+        Query custom data with the default access class. If no index is available to fulfil the query then the query will fail
+      requestBody:
+        description: Query object with an array of conditions to query the data with.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueryIndexBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryIndexResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  '/v1/data/projects/{projectId}/custom/{customId}/private/items':
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/CustomId'
+    post:
+      summary: Set Private Custom Item
+      operationId: setPrivateCustomItem
+      tags:
+        - Data
+      description: |
+        Set a private data item with a given key and value for the specified custom ID.
+        The value is limited to a maximum size of 5 MB across all private access level slots.
+        The entire private saved state for a custom ID is limited to 2000 keys.
+        Attempting to set a new key beyond this limit will result in an error.
+        Only accessible via an authenticated server authority.
+      security:
+        - ServiceAccount: [ ]
+      requestBody:
+        description: Add a data item to store for a custom ID.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetItemBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetItemResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    get:
+      summary: Get Private Custom Items
+      operationId: getPrivateCustomItems
+      tags:
+        - Data
+      description: |
+        Retrieves private save data values for all keys specified, ordered alphabetically in pages of 20.
+        If no keys are supplied then returns all keys, ordered alphabetically in pages of 20.
+        Only accessible via an authenticated server authority.
+      security:
+        - ServiceAccount: [ ]
+      parameters:
+        - schema:
+            $ref: '#/components/schemas/KeyList'
+          in: query
+          name: keys
+          description: The keys to retrieve, in exploded form style, e.g. `keys=KEY1&keys=KEY2&keys=KEY3`.
+          style: form
+          explode: true
+        - schema:
+            type: string
+          in: query
+          name: after
+          description: The key after which to retrieve the next page of keys.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetItemsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    delete:
+      summary: Delete Private Custom Items
+      operationId: deletePrivateCustomItems
+      tags:
+        - Data
+      description: |
+        Deletes all private data associated with a given custom ID. Only accessible via an authenticated server authority.
+      security:
+        - ServiceAccount: [ ]
+      responses:
+        '200':
+          description: OK
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  '/v1/data/projects/{projectId}/custom/{customId}/private/items/{key}':
+    parameters:
+      - $ref: '#/components/parameters/Key'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/CustomId'
+    delete:
+      summary: Delete Private Custom Item
+      operationId: deletePrivateCustomItem
+      tags:
+        - Data
+      description: Deletes a private data item by the specified key for the specified custom ID. Only accessible via an authenticated server authority.
+      security:
+        - ServiceAccount: [ ]
+      parameters:
+        - schema:
+            $ref: '#/components/schemas/WriteLock'
+          in: query
+          name: writeLock
+          description: |-
+            Enforces conflict checking when deleting an existing data item.
+            Omitting this field ignores write conflicts. When present, an error response will be returned if the writeLock in the request does not match the stored writeLock.
+      responses:
+        '200':
+          description: OK
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/DeleteConflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  '/v1/data/projects/{projectId}/custom/{customId}/private/keys':
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/CustomId'
+    get:
+      summary: Get Private Custom Keys
+      operationId: getPrivateCustomKeys
+      tags:
+        - Data
+      description: Gets a paged list of private keys for the given custom ID, ordered alphabetically in pages of 100. Only accessible via an authenticated server authority.
+      security:
+        - ServiceAccount: [ ]
+      parameters:
+        - schema:
+            $ref: '#/components/schemas/Key'
+          in: query
+          name: after
+          description: Returns the page of results after the key specified.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetKeysResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  '/v1/data/projects/{projectId}/custom/{customId}/private/item-batch':
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/CustomId'
+    post:
+      summary: Set Private Custom Item Batch
+      operationId: setPrivateCustomItemBatch
+      tags:
+        - Data
+      description: |-
+        Set up to 20 private data items with key, value and optional writeLock against the custom ID. The values are limited to a maximum size of 5 MB across all private access level slots for the custom ID.
+        The entire private saved state for a custom ID is limited to 2000 keys. Attempting to set a new key beyond this limit will result in an error.
+        The batch set operation is considered atomic and if any of the set key operation fails, the entire operation is failed. Error responses should identify the affected key operations that failed.
+        Only accessible via an authenticated server authority.
+      security:
+        - ServiceAccount: [ ]
+      requestBody:
+        description: Set batch data items for a custom ID.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetItemBatchBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetItemBatchResponse'
+        '400':
+          description: |-
+            Bad Request. Returned code indicates one of:
+            - Request parameter validation failure
+            - Other
+            See the errors field for more details.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/BasicErrorResponse'
+                  - $ref: '#/components/schemas/BatchValidationErrorResponse'
+                  - $ref: '#/components/schemas/ValidationErrorResponse'
+                  - $ref: '#/components/schemas/BatchBasicErrorResponse'
+                discriminator:
+                  propertyName: type
+                  mapping:
+                    problems/basic: '#/components/schemas/BasicErrorResponse'
+                    problems/validation: '#/components/schemas/ValidationErrorResponse'
+                    problems/batch-basic: '#/components/schemas/BatchBasicErrorResponse'
+                    problems/batch-validation: '#/components/schemas/BatchValidationErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/BatchConflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  '/v1/data/projects/{projectId}/custom/private/query':
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    post:
+      summary: Query Private Custom Data
+      operationId: queryPrivateCustomData
+      security:
+        - ServiceAccount: ['cloud_save.indexes.get']
+      tags:
+        - Data
+      description: |
+        Query custom data with the private access class. If no index is available to fulfil the query then the query will fail.
+      requestBody:
+        description: Query object with an array of conditions to query the data with.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueryIndexBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryIndexResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  '/v1/files/projects/{projectId}/players/{playerId}/items':
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/PlayerId'
+    get:
+      summary: List Player Files
+      operationId: listPlayerFiles
+      tags:
+        - Files
+      description: |
+        Retrieves a list of names of all the files currently saved in storage for a player along with size (in bytes), last date modified and current WriteLock.
+        Ordered alphabetically in page sizes of 20.
+      parameters:
+        - schema:
+            type: string
+          in: query
+          name: after
+          description: The key after which to retrieve the next page of files.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  '/v1/files/projects/{projectId}/players/{playerId}/items/{key}':
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/PlayerId'
+      - $ref: '#/components/parameters/Key'
+    get:
+      operationId: getDownloadUrl
+      summary: Get Player File Download URL
+      tags:
+        - Files
+      description: |
+        Generates a signed URL that will allow the client to download the requested player file for a limited period of time.
+        If successful, an object will be returned containing all necessary information to perform the download.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignedUrlResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    post:
+      operationId: getUploadUrl
+      summary: Get Player File upload URL
+      tags:
+        - Files
+      description: |-
+        Initiates the player file upload process and returns a URL to which the actual file contents can be uploaded.
+        The type, length and MD5 hash of the file have to be provided up-front.
+        If successful, an object will be returned containing all necessary information to perform the upload.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FileDetails'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignedUrlResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    delete:
+      summary: Delete Player File
+      operationId: deleteFile
+      tags:
+        - Files
+      description: Deletes the specified player file. If a WriteLock is provided, the file will only be deleted if it matches the stored WriteLock.
+      parameters:
+        - schema:
+            $ref: '#/components/schemas/FileWriteLock'
+          in: query
+          name: writeLock
+          description: |-
+            Enforces conflict checking when deleting an existing file.
+            Omitting this field ignores write conflicts. When present, an error response will be returned if the writeLock in the request does not match the stored writeLock.
+      responses:
+        '204':
+          description: No Content
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  '/v1/files/projects/{projectId}/players/{playerId}/items/{key}/metadata':
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/PlayerId'
+      - $ref: '#/components/parameters/Key'
+    get:
+      summary: Get Player File Metadata
+      operationId: getFileMetadata
+      tags:
+        - Files
+      description: Retrieves the metadata (size, date last modified and created, key, content type, and current WriteLock) of a single player file.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+components:
+  securitySchemes:
+    Client:
+      type: http
+      scheme: bearer
+      description: |-
+        To get started with Authentication, please visit the
+        [Client Authentication section](https://services.docs.unity.com/docs/client-auth).
+    ServiceAccount:
+      type: http
+      scheme: bearer
+      description: |-
+        To get started with Authentication, please visit the
+        [Service Account Authentication section](https://services.docs.unity.com/docs/service-account-auth).
+        When using a Service Account, these APIs require exchanging Service Account credentials for
+        an access token, please see the section about the
+        [Token Exchange API](https://services.docs.unity.com/docs/service-account-auth/index.html#extra-step-use-the-token-exchange-api).
+  parameters:
+    ProjectId:
+      name: projectId
+      in: path
+      description: ID of the project.
+      required: true
+      schema:
+        type: string
+      example: 8bdacc33-6eef-4577-beb0-633c86259f5b
+    PlayerId:
+      name: playerId
+      in: path
+      description: The player ID supplied by the Authorization service.
+      required: true
+      schema:
+        type: string
+      example: s1QFdyYFXCC2YBocplKoLstxvQ2r
+    CustomId:
+      name: customId
+      in: path
+      description: The custom data ID specified by the user. Must be between 1 and 50 characters long and contain only alphanumeric characters, underscores, and hyphens.
+      required: true
+      schema:
+        type: string
+        pattern: '^[A-Za-z0-9_-]{1,50}$'
+      example: my-custom-data-id
+    Key:
+      name: key
+      in: path
+      description: Item key.
+      required: true
+      schema:
+        $ref: '#/components/schemas/Key'
+  schemas:
+    Key:
+      title: Key
+      type: string
+      pattern: '[A-Za-z0-9_-]{1,50}'
+      description: Item key
+      minLength: 1
+      maxLength: 50
+      example: EXAMPLE_KEY
+    KeyList:
+      title: KeyList
+      type: array
+      description: List of keys
+      items:
+        $ref: '#/components/schemas/Key'
+    Value:
+      title: Value
+      type: object
+      description: Any JSON serializable structure with a maximum size of 5 MB.
+    WriteLock:
+      title: WriteLock
+      type: string
+      description: |-
+        Enforces conflict checking when updating an existing data item. This field should be omitted when creating a new data item.
+        When updating an existing item, omitting this field ignores write conflicts. When present, an error response will be returned if the writeLock in the request does not match the stored writeLock.
+      pattern: '^[A-Fa-f0-9]{32}$'
+      maxLength: 32
+      minLength: 32
+      example: efac747f6fb244569efef962ca9dc30e
+    ModifiedMetadata:
+      title: ModifiedMetadata
+      type: object
+      description: Timestamp for when the object was modified.
+      properties:
+        date:
+          $ref: '#/components/schemas/IsoDate'
+      required:
+        - date
+    IsoDate:
+      type: string
+      nullable: true
+      format: date-time
+      description: Date time in ISO 8601 format. Null if there is no associated value.
+      example: '2020-04-01T13:07:23Z'
+    FileWriteLock:
+      title: WriteLock
+      type: string
+      description: |-
+        Enforces conflict checking when updating an existing file. This field should be omitted when creating a new file.
+        When updating an existing file, omitting this field ignores write conflicts. When present, an error response will be returned if the writeLock in the request does not match the stored writeLock.
+      pattern: '^[0-9]*$'
+      example: '12345678901234567890'
+    PlayerId:
+      title: Player ID
+      description: The player ID supplied by the Authorization service.
+      type: string
+      example: s1QFdyYFXCC2YBocplKoLstxvQ2r
+    CustomId:
+      title: Custom Data ID
+      description: The custom data ID defined by the user.
+      type: string
+      example: my-custom-data-id
+    QueryIndexResponse:
+      title: QueryIndexResponse
+      description: The response to an index query request containing a list of the resulting entity IDs and their associated data.
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                description: The entity ID
+                oneOf:
+                  - $ref: '#/components/schemas/PlayerId'
+                  - $ref: '#/components/schemas/CustomId'
+              data:
+                type: array
+                description: The list of data key-value pairs for the entity
+                items:
+                  $ref: '#/components/schemas/Item'
+    Item:
+      title: Item
+      type: object
+      description: Response type for a Data Item stored in the Cloud Save service.
+      properties:
+        key:
+          $ref: '#/components/schemas/Key'
+        value:
+          $ref: '#/components/schemas/Value'
+        writeLock:
+          $ref: '#/components/schemas/WriteLock'
+        modified:
+          $ref: '#/components/schemas/ModifiedMetadata'
+        created:
+          $ref: '#/components/schemas/ModifiedMetadata'
+      required:
+        - key
+        - value
+        - writeLock
+        - modified
+        - created
+    GetItemsResponse:
+      title: GetItemsResponse
+      type: object
+      properties:
+        results:
+          type: array
+          minItems: 0
+          maxItems: 20
+          description: Data values for all keys, ordered aplhabetically in pages of 20.
+          items:
+            $ref: '#/components/schemas/Item'
+        links:
+          type: object
+          required:
+            - next
+          properties:
+            next:
+              type: string
+              nullable: true
+              description: Contains the URL path for requesting the next page of results. This value is null when there are no pages remaining.
+      required:
+        - results
+        - links
+    FileItem:
+      title: FileItem
+      type: object
+      description: Response type for a file stored in the Cloud Save service.
+      properties:
+        key:
+          $ref: '#/components/schemas/Key'
+        writeLock:
+          $ref: '#/components/schemas/WriteLock'
+        modified:
+          $ref: '#/components/schemas/ModifiedMetadata'
+        created:
+          $ref: '#/components/schemas/ModifiedMetadata'
+        contentType:
+          type: string
+          description: The MIME type of the stored file
+          example: text/plain
+        size:
+          type: integer
+          format: int64
+          description: The size of the stored file in bytes
+          example: 2048
+      required:
+        - key
+        - writeLock
+        - modified
+        - created
+        - contentType
+        - size
+    FileList:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileItem'
+          description: The array of returned file items
+        links:
+          type: object
+          properties:
+            next:
+              type: string
+              nullable: true
+          description: Links object containing the link for the next page of results
+    FileDetails:
+      title: FileDetails
+      type: object
+      description: Details included when generating an upload URL for a file
+      properties:
+        contentType:
+          type: string
+          description: The MIME type of the file that will be uploaded
+        contentLength:
+          type: integer
+          format: int64
+          description: The content length in bytes of the file that will be uploaded
+        contentMd5:
+          type: string
+          description: The base64 encoded MD5 checksum of the file contents that will be uploaded
+        writeLock:
+          $ref: '#/components/schemas/WriteLock'
+      required:
+        - contentType
+        - contentLength
+        - contentMd5
+    SignedUrlResponse:
+      type: object
+      properties:
+        signedUrl:
+          type: string
+          description: The signed URL used to access the resource.
+        httpMethod:
+          type: string
+          description: The HTTP method that must be used on the signedUrl.
+        requiredHeaders:
+          type: object
+          description: The set of HTTP headers that must be sent with the request for it to succeed.
+      required:
+        - signedUrl
+        - httpMethod
+        - requiredHeaders
+    BaseErrorResponse:
+      properties:
+        type:
+          type: string
+          description: >-
+            A URI reference [RFC3986] that identifies the problem type. This
+            specification encourages that, when dereferenced, it provide
+            human-readable documentation for the problem type (e.g., using HTML
+            [W3C.REC-html5-20141028]). When this member is not present, its
+            value is assumed to be "about:blank".
+        title:
+          type: string
+          description: >-
+            A short, human-readable summary of the problem type. It SHOULD NOT
+            change from occurrence to occurrence of the problem, except for
+            purposes of localization (e.g., using proactive content negotiation;
+            see [RFC7231], Section 3.4).
+        status:
+          type: integer
+          description: >-
+            The HTTP status code ([RFC7231], Section 6) generated by the origin
+            server for this occurrence of the problem.
+        code:
+          description: Service specific error code
+          type: integer
+        detail:
+          type: string
+          description: A human-readable explanation specific to this occurrence of the problem.
+        instance:
+          type: string
+          nullable: true
+          description: A URI reference that identifies the specific occurrence of the problem. It may or may not yield further information if dereferenced.
+
+      required:
+        - type
+    BasicErrorResponse:
+      title: BasicErrorResponse
+      description: |
+        Referenced from - https://tools.ietf.org/html/rfc7807#page-3
+        Consumers MUST use the "type" string as the primary identifier for the problem type; the 'title' string is advisory and included only for users who are not aware of the semantics of the URI and do not have the ability to discover them (e.g., offline log analysis). Consumers SHOULD NOT automatically dereference the type URI.
+        The "status" member, if present, is only advisory; it conveys the HTTP status code used for the convenience of the consumer. Generators MUST use the same status code in the actual HTTP response, to assure that generic HTTP software that does not understand this format still behaves correctly.  See Section 5 for further caveats regarding its use.
+        Consumers can use the status member to determine what the original status code used by the generator was, in cases where it has been changed (e.g., by an intermediary or cache), and when message bodies persist without HTTP information.  Generic HTTP software will still use the HTTP status code.
+        The "detail" member, if present, ought to focus on helping the client correct the problem, rather than giving debugging information.
+      type: object
+      example:
+        example-1:
+          type: problems/basic
+          title: service unavailable
+          status: 500
+          code: 1000
+          detail: service unavailable
+          details:
+            - health:
+                - service health ping failed
+      allOf: # Combines the BasicErrorModel and the inline model
+        - $ref: '#/components/schemas/BaseErrorResponse'
+        - properties:
+            details:
+              type: array
+              description: Machine readable service specific errors.
+              items:
+                type: object
+
+    ValidationErrorResponse:
+      title: ValidationErrorResponse
+      type: object
+      description: Validation error response when a value provided from the client does not pass validation on server.
+      example:
+        Validation Error Example:
+          type: problems/validation
+          title: validation error
+          status: 400
+          detail: See 'errors' for specific validation errors
+          instance: null
+          code: 1009
+          errors:
+            - field: name
+              messages:
+                - Only alphanumeric characters allowed
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        code:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationErrorBody'
+      required:
+        - type
+        - title
+        - status
+        - code
+        - detail
+        - errors
+    ValidationErrorBody:
+      title: ValidationErrorBody
+      type: object
+      properties:
+        field:
+          type: string
+        messages:
+          type: array
+          items:
+            type: string
+      required:
+        - field
+        - messages
+      description: Single error in the Validation Error Response.
+    SetItemBody:
+      title: SetItemBody
+      type: object
+      description: Request type for a Data Item to store in the Cloud Save service.
+      properties:
+        key:
+          description: The key will be created if it does not exist, provided the item limit of 2000 keys has not been reached for this entity.
+          allOf:
+            - $ref: '#/components/schemas/Key'
+        value:
+          $ref: '#/components/schemas/Value'
+        writeLock:
+          $ref: '#/components/schemas/WriteLock'
+      example:
+        Number:
+          key: HEALTH
+          value: 87
+          writeLock: 7b8920a57912509f6b5cbb183eb7fcb0
+        Array:
+          key: ID_LIST
+          value:
+            - 23
+            - 12
+            - 123
+          writeLock: 7b8920a57912509f6b5cbb183eb7fcb0
+        Object:
+          key: WEAPON_1
+          value:
+            item: Sword
+            damage: 3
+            durability: 46
+          writeLock: 7b8920a57912509f6b5cbb183eb7fcb0
+      required:
+        - key
+        - value
+    SetItemResponse:
+      title: SetItemResponse
+      type: object
+      description: Newly generated writeLock for the item.
+      properties:
+        writeLock:
+          $ref: '#/components/schemas/WriteLock'
+      required:
+        - writeLock
+    AttemptedItem:
+      title: AttemptedItem
+      type: object
+      description: Response type for an attempted Data Item sent to the Cloud Save service.
+      properties:
+        key:
+          $ref: '#/components/schemas/Key'
+        value:
+          $ref: '#/components/schemas/Value'
+        writeLock:
+          $ref: '#/components/schemas/WriteLock'
+      example:
+        Example attempted data item:
+          key: KEY1
+          value: data
+          writeLock: 7b8920a57912509f6b5cbb183eb7fcb0
+      required:
+        - key
+        - value
+        - writeLock
+    ConflictErrorResponseData:
+      title: ConflictErrorResponseData
+      description: A human-readable explanation specific to this occurrence of the problem.
+      type: object
+      properties:
+        attempted:
+          $ref: '#/components/schemas/AttemptedItem'
+        existing:
+          $ref: '#/components/schemas/Item'
+    ConflictErrorResponse:
+      title: ConflictErrorResponse
+      type: object
+      description: An error sent back upon resource conflict.
+      example:
+        Conflict Error Example:
+          type: problems/data/conflict
+          title: conflict error
+          status: 409
+          code: 1004
+          detail: WriteLock in data item update request does not match stored WriteLock
+          data:
+            attempted:
+              key: KEY1
+              value: new data
+              writeLock: 7b8920a57912509f6b5cbb183eb7fcb0
+            existing:
+              key: KEY1
+              value: old data
+              writeLock: 2509f6b5cbb187b8920a57913eb7fcb0
+              modified:
+                date: '2020-02-22T20:20:20Z'
+              created:
+                date: '2020-01-20T20:20:20Z'
+      allOf: # Combines the BasicErrorModel and the inline model
+        - $ref: '#/components/schemas/BaseErrorResponse'
+        - properties:
+            data:
+              $ref: '#/components/schemas/ConflictErrorResponseData'
+      required:
+        - type
+        - title
+        - status
+        - code
+        - detail
+        - data
+    DeleteConflictErrorResponse:
+      title: ConflictErrorResponse
+      type: object
+      description: An error sent back upon resource conflict.
+      example:
+        Conflict Error Example:
+          type: problems/data/conflict
+          title: conflict error
+          status: 409
+          code: 1004
+          detail: WriteLock in data item update request does not match stored WriteLock
+          data:
+            key: KEY1
+            attemptedWriteLock: 2509f6b5cbb187b8920a57913eb7fcb0
+            existingWriteLock: 7b8920a57912509f6b5cbb183eb7fcb0
+      allOf: # Combines the BasicErrorModel and the inline model
+        - $ref: '#/components/schemas/BaseErrorResponse'
+        - properties:
+            data:
+              type: object
+              description: A human-readable explanation specific to this occurrence of the problem.
+              properties:
+                key:
+                  type: string
+                attemptedWriteLock:
+                  type: string
+                existingWriteLock:
+                  type: string
+      required:
+        - type
+        - title
+        - status
+        - code
+        - detail
+        - data
+    KeyMetadata:
+      title: KeyMetadata
+      type: object
+      description: Response type Key with metadata for an individual data item stored in the Cloud Save service.
+      example:
+        Example:
+          key: KEY1
+          writeLock: 7b8920a57912509f6b5cbb183eb7fcb0
+          modified:
+            date: '2020-02-20T20:20:20Z'
+      properties:
+        key:
+          $ref: '#/components/schemas/Key'
+        writeLock:
+          $ref: '#/components/schemas/WriteLock'
+        modified:
+          $ref: '#/components/schemas/ModifiedMetadata'
+      required:
+        - key
+        - writeLock
+        - modified
+    GetKeysResponse:
+      title: GetKeysResponse
+      type: object
+      properties:
+        results:
+          type: array
+          description: A paged list of keys for the given player, ordered alphabetically in pages of 100.
+          items:
+            $ref: '#/components/schemas/KeyMetadata'
+        links:
+          type: object
+          required:
+            - next
+          properties:
+            next:
+              type: string
+              nullable: true
+              description: Contains the URL path for requesting the next page of results. This value is null when there are no pages remaining.
+      required:
+        - results
+        - links
+    SetItemBatchBody:
+      title: SetItemBatchBody
+      type: object
+      properties:
+        data:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/SetItemBody'
+    SetItemBatchResponse:
+      title: SetItemBatchResponse
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              key:
+                $ref: '#/components/schemas/Key'
+              writeLock:
+                $ref: '#/components/schemas/WriteLock'
+            required:
+              - key
+              - writeLock
+    BatchValidationErrorResponse:
+      title: BatchValidationErrorResponse
+      type: object
+      description: Batch validation error response when one or more values provided from the client does not pass validation on server
+      example:
+        Batch Validation Error Example:
+          type: problems/batch-validation
+          title: batch-validation error
+          status: 400
+          code: 1014
+          detail: See 'errors' for specific validation errors
+          errors:
+            - key: KEY_1
+              field: name
+              messages:
+                - Only alphanumeric characters allowed
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        code:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/BatchValidationErrorBody'
+      required:
+        - type
+        - title
+        - status
+        - code
+        - detail
+        - errors
+    BatchValidationErrorBody:
+      title: BatchValidationErrorBody
+      type: object
+      description: Single error in the Batch Validation Error Response.
+      properties:
+        field:
+          type: string
+        messages:
+          type: array
+          items:
+            type: string
+        key:
+          type: string
+      required:
+        - field
+        - messages
+        - key
+    BatchBasicErrorResponse:
+      title: BatchBasicErrorResponse
+      type: object
+      description: Batch basic error response when one or more values provided from the client fails some condition
+      example:
+        Batch Basic Error Example:
+          type: problems/batch-basic
+          title: batch-basic error
+          status: 404
+          code: 1016
+          detail: See 'errors' for error details
+          errors:
+            - key: KEY_1
+              messages:
+                - data item not found
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        code:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/BatchBasicErrorBody'
+      required:
+        - type
+        - title
+        - status
+        - code
+        - detail
+        - errors
+    BatchBasicErrorBody:
+      title: BatchBasicErrorBody
+      type: object
+      description: Single error in the Batch Basic Error Response.
+      properties:
+        messages:
+          type: array
+          items:
+            type: string
+        key:
+          type: string
+      required:
+        - messages
+        - key
+    FieldFilter:
+      title: FieldFilter
+      description: A field filter for querying an index
+      type: object
+      properties:
+        key:
+          $ref: '#/components/schemas/Key'
+        value:
+          type: object
+          description: The indexed Cloud Save value
+        op:
+          type: string
+          description: |-
+            The comparison operator to use for the filter. The specified value is compared to the indexed value (lexicographically for string data, numerically for numerical data) using one of the following operators:
+            * `EQ` - Equal
+            * `NE` - Not Equal
+            * `LT` - Less Than
+            * `LE` - Less Than or Equal
+            * `GT` - Greater Than
+            * `GE` - Greater Than or Equal
+          enum:
+            - EQ
+            - NE
+            - LT
+            - LE
+            - GT
+            - GE
+        asc:
+          type: boolean
+          description: Whether the field is sorted in ascending order
+      required:
+        - key
+        - value
+        - op
+        - asc
+    QueryIndexBody:
+      title: QueryIndexBody
+      description: The request body for querying an index
+      type: object
+      properties:
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldFilter'
+        returnKeys:
+          type: array
+          description: The keys to return in the response. This can include keys not on the index. If not specified or empty, the data on the results will be empty for any returned entities.
+          items:
+            $ref: '#/components/schemas/Key'
+        offset:
+          type: integer
+          description: The number of results to skip. Defaults to 0.
+          minimum: 0
+        limit:
+          type: integer
+          description: The maximum number of results to return. Defaults to 10. Specifying 0 will return the default number of results.
+          minimum: 0
+          maximum: 100
+      required:
+        - fields
+    BatchConflictErrorResponse:
+      title: BatchConflictErrorResponse
+      type: object
+      description: An error response sent back upon a batch update containing a resource conflict. All Data Items within the request should be considered unprocessed. The error response data[] property contains the Data Items that conflicted.
+      example:
+        Batch Conflict Error Example:
+          type: problems/data/batch-conflict
+          title: batch conflict error
+          status: 409
+          code: 1015
+          detail: WriteLock in one or more data items within update request does not match stored WriteLock
+          data:
+            - attempted:
+                key: KEY1
+                value: new data
+                writeLock: 7b8920a57912509f6b5cbb183eb7fcb0
+              existing:
+                key: KEY1
+                value: old data
+                writeLock: 2509f6b5cbb187b8920a57913eb7fcb0
+                modified:
+                  date: '2020-02-22T20:20:20Z'
+                created:
+                  date: '2020-01-20T20:20:20Z'
+      allOf: # Combines the BasicErrorModel and the inline model
+        - $ref: '#/components/schemas/BaseErrorResponse'
+        - properties:
+            data:
+              type: array
+              description: A human-readable explanation specific to this occurrence of the problem.
+              items:
+                $ref: '#/components/schemas/ConflictErrorResponseData'
+      required:
+        - type
+        - title
+        - status
+        - code
+        - detail
+        - data
+  responses:
+    BadRequest:
+      description: |
+        Bad Request. Returned code indicates one of:
+        - Request parameter validation failure
+        - Other
+        See the errors field for more details.
+      content:
+        application/problem+json:
+          schema:
+            oneOf:
+              - $ref: '#/components/schemas/BasicErrorResponse'
+              - $ref: '#/components/schemas/ValidationErrorResponse'
+            discriminator:
+              propertyName: type
+              mapping:
+                'problems/basic': '#/components/schemas/BasicErrorResponse'
+                'problems/validation': '#/components/schemas/ValidationErrorResponse'
+    Unauthorized:
+      description: Invalid Authentication Token
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/BasicErrorResponse'
+    Forbidden:
+      description: Forbidden
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/BasicErrorResponse'
+    NotFound:
+      description: Not Found
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/BasicErrorResponse'
+    Conflict:
+      description: >-
+        Conflict. The 'writeLock' supplied in the request does not match the
+        current stored state for this entity, some other client has updated this
+        data item since you acquired this writeLock.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ConflictErrorResponse'
+    DeleteConflict:
+      description: >-
+        Conflict. The 'writeLock' supplied in the request does not match the
+        current stored state for this entity, some other client has updated this
+        data item since you acquired this writeLock.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/DeleteConflictErrorResponse'
+    BatchConflict:
+      description: >-
+        Conflict. The 'writeLock' supplied in the request does not match the
+        current stored state for this entity, some other client has updated
+        this data item since you acquired this writeLock.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/BatchConflictErrorResponse'
+    TooManyRequests:
+      description: Too Many Requests
+      headers:
+        Retry-After:
+          schema:
+            type: number
+          description: The number of seconds until a request will be accepted
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/BasicErrorResponse'
+    InternalServerError:
+      description: Internal Server Error
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/BasicErrorResponse'
+    ServiceUnavailable:
+      description: Service Unavailable
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/BasicErrorResponse'
